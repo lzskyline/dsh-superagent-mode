@@ -1,0 +1,25 @@
+{
+  "name": "dsh-superagent-mode",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Superagent operating discipline as a DSH bundle: an orchestrator preset that scopes a request, dispatches subagents, verifies their claims and reports once, plus the worker preset those subagents run under. No external service, no background process, no environment changes.",
+  "type": "module",
+  "license": "MIT",
+  "files": [
+    "cordis.patch.yml",
+    "prompts/*.md",
+    "README.md",
+    "LICENSE",
+    "README.zh-CN.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "manifestVersion": 1
+  },
+  "scripts": {
+    "build": "node prepare.mjs",
+    "generate": "node prepare.mjs"
+  }
+}

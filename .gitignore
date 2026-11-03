@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Packed artifacts
+*.tgz
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local backups of profile files, probe homes, and other scratch state that must
+# never be committed (they can contain machine paths and session tokens)
+*.bak
+.dsh-probe/
+.dsh-test/
+.dsh-verify/
