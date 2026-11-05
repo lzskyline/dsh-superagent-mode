@@ -10,7 +10,8 @@ session runs it the superagent way — scope it, dispatch subagents, verify thei
 claims, report once.
 
 It installs through DSH's own plugin mechanism, so it is added and removed with
-`dsh plugin` like any other bundle.
+`dsh plugin` like any other bundle. The bundle is a generated YAML patch plus one
+small host plugin that restates the dispatch rule on every operator turn.
 
 ## What it installs
 
@@ -18,14 +19,16 @@ Two agent presets, declared in this package's `cordis.patch.yml`:
 
 | Preset | Role |
 | --- | --- |
-| `Superagent` | The orchestrator. Reads the request, decides act / ask one question / stop at the decision, keeps scope minimal, dispatches subagents, verifies what comes back, reports once in a fixed shape. |
+| `Superagent` | The orchestrator. Reads the request, decides act / ask one question / stop at the decision, keeps scope minimal, dispatches subagents, verifies what comes back, reports once per request in a fixed shape. |
 | `Superagent Worker` | The worker a dispatched subagent runs under. Acts on the brief, verifies its own change, escalates a real blocker immediately, reports with evidence. |
 
 Both are derived from the `standard` preset shipped by the DSH you install into,
 so they carry that version's tools and its Windows/non-Windows shell guards. The
-only differences are the persona prompt and the subagent wiring
-(`superagent` dispatches into `superagent-worker`; a worker's own subagents fall
-back to `standard`).
+differences are the persona prompt (the orchestrator's also ends with a two-line
+dispatch reminder), the orchestrator's per-turn reminder plugin, and the subagent
+wiring (`superagent` dispatches into `superagent-worker`; a worker's own
+subagents fall back to `standard`). The orchestrator keeps the standard preset's
+full tool set: it can still edit inline, and the prompt asks it not to.
 
 ## What it does not touch
 
@@ -35,7 +38,46 @@ back to `standard`).
 
 It adds two entries to the preset picker. Everything else is opt-in per session.
 
+## How the dispatch rule is held
+
+The persona prompt says every operator message starts a new task, but a long
+chat drifts. Two small mechanisms restate the rule where the model cannot miss
+it:
+
+- a two-line suffix at the end of the orchestrator's persona;
+- a host plugin (`lib/reminder.js`, mounted as the `superagent-reminder` row)
+  that injects one short context message at the start of every operator turn.
+
+The reminder fires once per operator message, not once per model step:
+child-completion turns are skipped. It adds roughly 40 tokens per turn and one
+context message in the transcript. It is guidance, not a gate — the orchestrator
+keeps the standard preset's full tool set — so nothing forces it to dispatch.
+
+## Version compatibility
+
+Release 0.1.2 targets DSH **0.2.2-rc.1** and declares
+`"engines": { "dsh": ">=0.2.2-rc.1 <0.3.0-0" }`. DSH checks that gate when it
+loads the bundle, so an older DSH refuses it instead of running a patch built
+for another version. Check your version before installing.
+
+The patch is not lossless across versions:
+
+- On 0.2.1 the bundle is refused by the `engines.dsh` gate. If you bypass the
+  gate, the patch would lose the `list_agents` tool (0.2.1 provided it through
+  the removed `dsh-tool-subagent-control/list-agents` subpath) and, with the new
+  `modelSelection` key, subagent model selection.
+- A patch generated for 0.2.1 breaks 0.2.2: the preset is marked broken and
+  hidden from the picker.
+
+If you are on an older DSH, stay on release 0.1.1, or run `node prepare.mjs` on
+your machine to regenerate the patch for that version. Do not install 0.1.2
+there.
+
 ## Install
+
+**Check the DSH version first.** 0.1.2 is built for DSH 0.2.2-rc.1; on 0.2.1 or
+older the bundle is refused by its `engines.dsh` gate. Use 0.1.1 there, or
+regenerate the patch with `prepare.mjs`.
 
 The generated `cordis.patch.yml` depends on the shipped `standard` preset of a
 specific DSH version. Four ways in, easiest first — they all land in the same
@@ -107,6 +149,20 @@ Then **restart the DeepSeek Harness app**, open a session, and pick
   `dsh plugin` is not guarded — it only forwards to pnpm — so plugin add/remove
   works for that profile too. The desktop app additionally offers its own
   Plugin Manager UI.
+
+## Choosing the preset
+
+The picker in the composer applies the preset to the **next session only**. It
+does not change the default for future tasks.
+
+To make Superagent the default for new tasks, open the preset menu and choose
+**Set as new task default**. That writes `agent-preset-registry.selectedDefault`
+in settings; the shipped `default` stays `standard`, and the selected default
+overrides it.
+
+After a DSH upgrade, check the preset menu and the new-task default. A preset
+that fails to load is hidden from the picker; if Superagent is missing, set it
+as the new-task default again.
 
 ## Uninstall
 
@@ -186,7 +242,9 @@ node prepare.mjs
 
 `prompts/README.md` documents where each prompt came from, what was deliberately
 dropped from the original design, and the known gaps. Read it before changing
-behaviour.
+behaviour. The two-line persona suffix is `ORCHESTRATOR_SUFFIX` in `build.mjs`;
+the per-turn reminder text is in `lib/reminder.js`. Neither is generated from
+`prompts/`.
 
 ## How the bundle mechanism works
 
@@ -209,13 +267,29 @@ directory. DSH then does two things automatically:
 after which the bundle's `cordis.patch.yml` is composed into the profile. No
 hand-editing of any profile file.
 
+The bundle is not YAML alone. `package.json` also exposes
+`dsh-superagent-mode/reminder`, which resolves to `lib/reminder.js`:
+
+```json
+"exports": {
+  "./reminder": "./lib/reminder.js",
+  "./package.json": "./package.json"
+}
+```
+
+The orchestrator preset mounts that file as an ordinary plugin row. It is plain
+ESM, has no build step, and is loaded from the profile's `node_modules` like any
+other host plugin. `@deepseek-ai/dsh-llm` is a peer dependency, supplied by the
+running DSH.
+
 ## Files
 
 ```
-package.json        bundle manifest (dsh.bundle.patch + manifestVersion)
+package.json        bundle manifest (dsh.bundle.patch + manifestVersion + exports)
 prepare.mjs         dumps this machine's shipped config and regenerates the patch
 build.mjs           the derivation logic: standard preset -> our two presets
 cordis.patch.yml    generated; what the bundle actually contributes
+lib/reminder.js     host plugin: one dispatch reminder per operator turn
 prompts/*.md        the prompt stack, one file per concern
 ```
 
@@ -224,6 +298,8 @@ emitting a preset that boots wrong, so a DSH release that reshapes `standard`
 breaks the build instead of the app.
 
 ## Verification performed
+
+Release 0.1.1 (historical):
 
 - `prepare.mjs` regenerates the patch against a throwaway `DSH_HOME`.
 - Install through `dsh plugin --profile <p> add` (both `link:` and tarball forms)
@@ -236,10 +312,33 @@ breaks the build instead of the app.
 - The profile boots (`dsh web --port 0 --no-open`) and serves the UI with no
   plugin or preset errors in the startup log.
 
+Release 0.1.2 on DSH 0.2.2-rc.1:
+
+- `node build.mjs <0.2.2 dump> cordis.patch.yml` exits 0. The generated patch
+  parses with js-yaml and asserts: both presets have `tool-fs` with only
+  `applyPatch: false`; the orchestrator persona has the re-arm section, the
+  countable threshold and the suffix; the worker has none of those; the
+  orchestrator's last plugin row is `superagent-reminder`, and the worker has no
+  such row.
+- With the regenerated package copied into a scratch profile,
+  `dsh --profile <p> --dump-config` exits 0: both presets compose, and the
+  reminder row appears only in `superagent`.
+- The scratch profile boots (`dsh web --port 0 --no-open`) and prints its URL
+  with no plugin or preset errors in the startup log.
+- A real one-message session in a scratch headless profile, with the reminder
+  mounted directly, logged a `user/message` with
+  `source.kind: "superagent-reminder"` at step 1, before the model request. The
+  run then stopped with `MISSING_CREDENTIAL` because that scratch home had no API
+  key, so the model's response was not exercised. A harness also exercised step 2,
+  child-completion, reject, abort and two consecutive operator turns.
+
 ## Known gaps
 
 These are inherent to dropping dsh-superagent's host machinery, not bugs:
 
+- **Dispatch is not enforced.** The persona suffix and the per-turn reminder are
+  guidance. The orchestrator keeps the full standard tool set, so nothing stops
+  it from editing inline or skipping a brief; only the prompt asks it not to.
 - **No authorization gate.** The original capped work with a Mandate the host
   enforced. Here the stop conditions are prompt-level discipline only: the model
   is asked to stop at product/UX decisions, public-interface changes,

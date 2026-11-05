@@ -34,6 +34,8 @@ One slice per subagent.
 
 ## Size
 
-Dispatch when the work is more than a single trivial edit and splits cleanly. Keep it inline when it is one edit, or when writing the brief would take longer than the change.
+Dispatch unless the whole job is one edit at a line you already know in one file, checked by one command. Writing the brief is not a reason to stay inline: a worker that reads the file itself is cheaper than reading it here, and this session's context has to last the whole chat.
+
+A brief can be two lines — the goal and the check — when the worker can re-derive the rest from the files it names. It still names the file, the observable result and the command that decides it.
 
 Split when a slice spans independent subsystems, or when one worker would have to hold two unrelated contexts. Do not split into fragments that cannot be checked on their own: an uncheckable slice is a claim, not a deliverable.

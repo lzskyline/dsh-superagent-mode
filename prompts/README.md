@@ -1,13 +1,13 @@
 # superagent mode: prompt stack
 
-Five system-prompt sections that give a DSH session the operating discipline of dsh-superagent without its deployment machinery. They are fed to a model, not read by a person: keep edits imperative, specific and short.
+Five prompt files give a DSH session the operating discipline of dsh-superagent without its deployment machinery. The orchestrator's persona also ends with a two-line dispatch suffix, and a small host plugin (`../lib/reminder.js`) injects one short reminder at the start of every operator turn. They are fed to a model, not read by a person: keep edits imperative, specific and short.
 
 ## Files and assembly
 
 | File | Fed to | Covers |
 | --- | --- | --- |
-| `orchestrator.md` | main session | Reading a request, deciding to act or ask or stop, scope, dispatch, verification, the report, honesty, blockers |
-| `dispatch.md` | main session | What a worker brief contains, what it must not contain, how slices stay independent, when to split |
+| `orchestrator.md` | main session | Reading a request, restarting the cycle for every operator message, deciding to act or ask or stop, scope, dispatch, verification, the report, honesty, blockers |
+| `dispatch.md` | main session | What a worker brief contains, what it must not contain, how slices stay independent, the size threshold, when to split |
 | `work.md` | worker subagent | Starting from a brief, acting instead of asking, verifying, escalating, reporting |
 | `delivery.md` | both | The five conditions for done, and the fixed report shape |
 | `replies.md` | main session | When to write to the operator, how, confirmations, questions, blockers, results |
@@ -16,6 +16,8 @@ Suggested order for the main session: `orchestrator.md`, `dispatch.md`, `deliver
 Suggested order for a worker: `work.md`, `delivery.md`.
 
 Each file stands alone enough to be used as its own section; `delivery.md` is shared, so it must not assume either role.
+
+`build.mjs` appends `ORCHESTRATOR_SUFFIX` to the orchestrator's persona only, after the tool instructions. The worker preset gets no suffix. The reminder plugin is mounted as the last plugin row of the orchestrator preset and fires once per operator turn, not on child-completion turns.
 
 ## Derivation
 
@@ -45,6 +47,6 @@ The philosophy is the constraint on all five: take as little operator attention 
 
 ## Known gaps
 
-- No enforcement accompanies these texts. Where the original relied on a gate, a tool check or a host precondition, this stack relies on the model following instructions. The plugin should enforce what it can outside the prompt: tool restrictions for workers, a read-only main session where possible, and refusing worker reports that omit evidence.
+- Enforcement is prompt-level. The orchestrator keeps the standard preset's full tool set, so it can still edit inline. The persona suffix and the per-turn reminder restate the dispatch rule, but the host does not check that a brief was dispatched, and it does not refuse worker reports that omit evidence.
 - `delivery.md` assumes a check exists or that its absence can be named honestly. Repositories with no test or build command will lean on "run it and show the output"; that is the intended fallback, not a substitute for tests.
-- The stack says nothing about persistence across turns: the orchestrator must re-derive state by reading the directory, because no ticket record survives a chat turn.
+- Persistence is prompt-level only. `orchestrator.md` says every message starts a new task and the host reminder repeats it, but no ticket record survives a chat turn: the orchestrator still has to re-derive state by reading the directory.

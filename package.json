@@ -1,17 +1,28 @@
 {
   "name": "dsh-superagent-mode",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
-  "description": "Superagent operating discipline as a DSH bundle: an orchestrator preset that scopes a request, dispatches subagents, verifies their claims and reports once, plus the worker preset those subagents run under. No external service, no background process, no environment changes.",
+  "description": "Superagent operating discipline as a DSH bundle: an orchestrator preset that scopes a request, dispatches subagents, verifies their claims and reports once per request, plus the worker preset those subagents run under. No external service, no background process, no environment changes.",
   "type": "module",
   "license": "MIT",
+  "exports": {
+    "./reminder": "./lib/reminder.js",
+    "./package.json": "./package.json"
+  },
   "files": [
     "cordis.patch.yml",
+    "lib/reminder.js",
     "prompts/*.md",
     "README.md",
     "LICENSE",
     "README.zh-CN.md"
   ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm": ">=0.2.1-rc.1 <0.3.0-0 || >=0.2.2-rc.1 <0.3.0-0"
+  },
+  "engines": {
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

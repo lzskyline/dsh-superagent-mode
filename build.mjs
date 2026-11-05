@@ -4,7 +4,7 @@
  * dsh-superagent operating discipline without any of its deployment machinery.
  *
  *   superagent         - the orchestrator: reads a request, scopes it, dispatches
- *                        subagents, verifies, reports once.
+ *                        subagents, verifies, reports once per request.
  *   superagent-worker  - the worker a dispatched subagent runs under.
  *
  * Both are derived from the SHIPPED `standard` preset of the DSH being installed
@@ -45,6 +45,22 @@ export const PRESET_IDS = ['superagent', 'superagent-worker']
 /** Patch row ids this patch inserts. */
 export const ROW_IDS = ['preset-superagent', 'preset-superagent-worker']
 
+/**
+ * Two-line reminder appended as the orchestrator's persona suffix. `dsh-persona`
+ * places it at DEPLOYMENT_PERSONA_SUFFIX, after the tool instructions, so the
+ * dispatch rule is the last thing the model reads. The worker preset gets none.
+ */
+export const ORCHESTRATOR_SUFFIX = [
+  'Every operator message starts a new task: re-run decide, dispatch, verify, report for it.',
+  'A question that takes more than two reads, one command or one look at a live page is a dispatch, not something to answer from here.',
+].join('\n')
+
+/** Row id of the per-turn reminder plugin, mounted only in the orchestrator preset. */
+export const REMINDER_ROW_ID = 'superagent-reminder'
+
+/** Module specifier of the reminder host plugin; resolved through package.json exports. */
+export const REMINDER_MODULE = 'dsh-superagent-mode/reminder'
+
 export function promptStack(files, promptsDir = PROMPTS_DIR) {
   return files
     .map(name => readFileSync(join(promptsDir, name), 'utf8').trim())
@@ -76,13 +92,15 @@ function blockScalar(key, indent, text) {
   return [`${pad}${key}: |`, ...body]
 }
 
-export function derive(block, { entryId, presetId, order, label, description, prompt, subagentPreset }) {
+export function derive(block, { entryId, presetId, order, label, description, prompt, suffix = '', reminder = false, subagentPreset }) {
   const out = []
   let seenEntryId = false
   let seenConfigId = false
   let seenOrder = false
   let seenPersona = false
   let seenSubagent = false
+  let seenPlugins = false
+  let rowIndent
 
   for (const line of block) {
     // 1. the patch row id
@@ -108,11 +126,19 @@ export function derive(block, { entryId, presetId, order, label, description, pr
       continue
     }
 
-    // 4. replace the persona prefix with our prompt stack
+    // 4. replace the persona prefix with our prompt stack, then the optional suffix
     if (!seenPersona && /^ {10}prefix: You are a coding agent powered by the \{\{model\}\} model\.\s*$/.test(line)) {
       out.push(...blockScalar('prefix', 10, prompt))
+      if (suffix) out.push(...blockScalar('suffix', 10, suffix))
       seenPersona = true
       continue
+    }
+
+    // 4b. remember the preset's plugin-list indent, so the reminder row can join it
+    if (!seenPlugins && /^ {4}plugins:\s*$/.test(line)) seenPlugins = true
+    if (seenPlugins && rowIndent === undefined) {
+      const row = /^(\s+)- id: \S+/.exec(line)
+      if (row) rowIndent = row[1]
     }
 
     // 5. point dispatched subagents at the worker preset
@@ -131,9 +157,17 @@ export function derive(block, { entryId, presetId, order, label, description, pr
     ['config id', seenConfigId],
     ['config order', seenOrder],
     ['persona prefix', seenPersona],
+    ['plugins list', !reminder || (seenPlugins && rowIndent !== undefined)],
     ['subagent tool', seenSubagent],
   ].filter(([, ok]) => !ok).map(([name]) => name)
   if (missing.length) throw new Error(`anchor(s) not found in the shipped standard preset: ${missing.join(', ')}`)
+
+  // Last row of the plugin list: the reminder participates in the preset, so it
+  // activates and disposes with the session instead of leaking across presets.
+  if (reminder) {
+    out.push(`${rowIndent}- id: ${REMINDER_ROW_ID}`)
+    out.push(`${rowIndent}  name: '${REMINDER_MODULE}'`)
+  }
 
   return out
 }
@@ -150,8 +184,10 @@ export function buildPatch(defaultConfigText, { promptsDir = PROMPTS_DIR } = {})
     presetId: 'superagent',
     order: 5,
     label: 'Superagent',
-    description: 'Orchestrator mode: scopes the request, dispatches subagents, verifies their claims, reports once. Does not implement inline.',
+    description: 'Orchestrator mode: scopes the request, dispatches subagents, verifies their claims, reports once per request. Does not implement inline.',
     prompt: promptStack(ORCHESTRATOR_PROMPT, promptsDir),
+    suffix: ORCHESTRATOR_SUFFIX,
+    reminder: true,
     subagentPreset: 'superagent-worker',
   })
 

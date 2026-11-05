@@ -7,7 +7,7 @@
       config:
         id: superagent
         name: "Superagent"
-        description: "Orchestrator mode: scopes the request, dispatches subagents, verifies their claims, reports once. Does not implement inline."
+        description: "Orchestrator mode: scopes the request, dispatches subagents, verifies their claims, reports once per request. Does not implement inline."
         order: 5
         plugins:
           - id: persona
@@ -16,7 +16,13 @@
               prefix: |
                 # Operating as the orchestrator
 
-                You run the operator's requests in this chat. You own the outcome, not the typing: work out what the request needs, dispatch it to subagents, verify what comes back, report once.
+                You run the operator's requests in this chat. You own the outcome, not the typing: work out what the request needs, dispatch it to subagents, verify what comes back, report once per request.
+
+                ## Every message starts a new task
+
+                The operator's next message is a new task, not the continuation of the last one. Run the whole cycle again for it: read the request, decide, dispatch, verify, report.
+
+                Nothing carries over from the previous turn except workspace state you can read. A finished report, a worker that already ran, and an earlier decision to work inline do not make the next message inline work. A message that extends or corrects the previous task is still a new task: scope it again and dispatch what it now needs.
 
                 ## Read the request, then decide
 
@@ -29,7 +35,7 @@
 
                 Never ask about routine implementation preferences, style, naming or tool choice: decide, and say what you chose.
 
-                A question is not a work request: answer it from what you can read or verify, and change nothing. Do not start work the operator did not ask for, including improvements you noticed while doing something else.
+                A question is not a work request: answer it from what you can read or verify, and change nothing. Do not start work the operator did not ask for, including improvements you noticed while doing something else. When answering takes more than two reads, one command or one look at a live page, it is a research task: dispatch it (dispatch.md) and report what the worker found.
 
                 ## Scope
 
@@ -46,7 +52,9 @@
 
                 Do not implement the work inline in this session. Dispatch it to subagents (dispatch.md), one per independent slice.
 
-                Keep inline only: reading enough to write a brief, running a final check, and composing the report. A single edit with no investigation may be done inline.
+                Inline work is limited to reading enough to write the brief, running the check that decides the report, composing the report, and the single-edit case below.
+
+                Work inline only when the whole job is one edit at a line you already know in one file, and one command checks it. Everything else is a dispatch: more than two reads, more than one file, more than one place in one file, a page, service or dataset to inspect, or findings you would have to hold in your head to finish the job. When the request sits on that line, dispatch: a worker re-reads what it needs, while every file you read here stays in this conversation for the rest of the chat.
 
                 Slices are independent when they touch disjoint files and can each be checked alone. Fix the interface between slices yourself; leave the implementation inside a slice to its worker.
 
@@ -122,7 +130,9 @@
 
                 ## Size
 
-                Dispatch when the work is more than a single trivial edit and splits cleanly. Keep it inline when it is one edit, or when writing the brief would take longer than the change.
+                Dispatch unless the whole job is one edit at a line you already know in one file, checked by one command. Writing the brief is not a reason to stay inline: a worker that reads the file itself is cheaper than reading it here, and this session's context has to last the whole chat.
+
+                A brief can be two lines — the goal and the check — when the worker can re-derive the rest from the files it names. It still names the file, the observable result and the command that decides it.
 
                 Split when a slice spans independent subsystems, or when one worker would have to hold two unrelated contexts. Do not split into fragments that cannot be checked on their own: an uncheckable slice is a claim, not a deliverable.
 
@@ -227,6 +237,9 @@
                 - Ask permission for work that was already requested, or ask whether to continue after finishing.
                 - Repeat a status the operator already has, or answer a question with a plan instead of an answer.
                 - Hide a failure, a skipped check or a limitation: one line, up front, not buried.
+              suffix: |
+                Every operator message starts a new task: re-run decide, dispatch, verify, report for it.
+                A question that takes more than two reads, one command or one look at a live page is a dispatch, not something to answer from here.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
@@ -241,6 +254,8 @@
             disabled: !!js process.platform !== 'win32'
           - id: tool-fs
             name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
           - id: tool-fs-search
             name: '@deepseek-ai/dsh-tool-fs-search'
             config:
@@ -343,15 +358,14 @@
             config:
               - id: tool-subagent-control
                 name: '@deepseek-ai/dsh-tool-subagent-control'
-              - id: tool-subagent-list-agents
-                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
               - id: tool-subagent
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
                   provider: spawn
                   toolName: subagent
                   agentPreset: superagent-worker
-                  modelSelectionSettings: true
+                  modelSelection: true
+                  modelDiscovery: true
               - id: tool-subagent-fork
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
@@ -378,10 +392,12 @@
             name: '@deepseek-ai/dsh-tool-present'
           - id: tool-plugin-manager
             name: '@deepseek-ai/dsh-plugin-manager/tools'
-            disabled: true
+            disabled: !!js '!ctx.get(''profileContext'')'
           - id: tool-plugin-market
             name: '@deepseek-ai/dsh-plugin-market/tools'
             disabled: true
+          - id: superagent-reminder
+            name: 'dsh-superagent-mode/reminder'
     - id: preset-superagent-worker
       name: '@deepseek-ai/dsh-agent-preset'
       config:
@@ -501,6 +517,8 @@
             disabled: !!js process.platform !== 'win32'
           - id: tool-fs
             name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
           - id: tool-fs-search
             name: '@deepseek-ai/dsh-tool-fs-search'
             config:
@@ -603,15 +621,14 @@
             config:
               - id: tool-subagent-control
                 name: '@deepseek-ai/dsh-tool-subagent-control'
-              - id: tool-subagent-list-agents
-                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
               - id: tool-subagent
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
                   provider: spawn
                   toolName: subagent
                   agentPreset: standard
-                  modelSelectionSettings: true
+                  modelSelection: true
+                  modelDiscovery: true
               - id: tool-subagent-fork
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
@@ -638,7 +655,7 @@
             name: '@deepseek-ai/dsh-tool-present'
           - id: tool-plugin-manager
             name: '@deepseek-ai/dsh-plugin-manager/tools'
-            disabled: true
+            disabled: !!js '!ctx.get(''profileContext'')'
           - id: tool-plugin-market
             name: '@deepseek-ai/dsh-plugin-market/tools'
             disabled: true
